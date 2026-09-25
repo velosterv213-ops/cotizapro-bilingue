@@ -13,6 +13,8 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon.svg">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
   <style>
     :root { --ink:#12202f; --muted:#667085; --line:#d9e1e8; --brand:#0b6e4f; --brand2:#084c3a; --paper:#fff; --bg:#f2f6f4; --warn:#9b2c2c; }
     * { box-sizing:border-box; }
@@ -96,7 +98,8 @@
       <button class="secondary" id="copyMessage">Copiar mensaje</button>
       <button class="secondary" id="referBtn">Recomienda y gana</button>
       <button class="secondary" id="installApp">Instalar en teléfono</button>
-      <button class="primary" onclick="window.print()">Descargar / Imprimir PDF</button>
+      <button class="primary" id="sharePdf">Compartir PDF</button>
+      <button class="secondary" onclick="window.print()">Imprimir</button>
     </div>
   </header>
 
@@ -350,6 +353,42 @@
     };
     $('clearSaved').onclick=()=>{if(confirm('¿Borrar todas las cotizaciones guardadas?'))saveAll([])};
     $('copyMessage').onclick=async()=>{const t=totals(); const es=`Hola ${$('customer').value||''}. Le envío la cotización ${$('quoteNumber').value} por ${money(t.total)}. El depósito para reservar es ${money(t.deposit)}. Quedo atento a cualquier pregunta.`; const en=`Hello ${$('customer').value||''}. I'm sending quote ${$('quoteNumber').value} for ${money(t.total)}. The deposit to schedule the work is ${money(t.deposit)}. Please let me know if you have any questions.`; const msg=$('language').value==='es'?es:$('language').value==='en'?en:`${es}\n\n${en}`; try{await navigator.clipboard.writeText(msg);flash('Mensaje bilingüe copiado.')}catch{prompt('Copia este mensaje:',msg)}};
+    async function sharePdf(){
+      const btn=$('sharePdf'); const prevText=btn.textContent;
+      btn.textContent='Generando...'; btn.disabled=true;
+      try{
+        if(typeof html2canvas==='undefined'||!window.jspdf){ flash('Cargando herramientas de PDF, intenta de nuevo en unos segundos.'); return; }
+        const { jsPDF } = window.jspdf;
+        const node=$('quotePreview');
+        const canvas=await html2canvas(node,{scale:2,backgroundColor:'#ffffff'});
+        const imgData=canvas.toDataURL('image/png');
+        const pdf=new jsPDF({unit:'pt',format:'letter'});
+        const pageW=pdf.internal.pageSize.getWidth(), pageH=pdf.internal.pageSize.getHeight();
+        const imgW=pageW, imgH=canvas.height*imgW/canvas.width;
+        let heightLeft=imgH, position=0;
+        pdf.addImage(imgData,'PNG',0,position,imgW,imgH);
+        heightLeft-=pageH;
+        while(heightLeft>0){ position=heightLeft-imgH; pdf.addPage(); pdf.addImage(imgData,'PNG',0,position,imgW,imgH); heightLeft-=pageH; }
+        const fileName=`Cotizacion-${($('quoteNumber').value||'CotizaPro').replace(/[^\w-]+/g,'')}.pdf`;
+        const blob=pdf.output('blob');
+        const file=new File([blob],fileName,{type:'application/pdf'});
+        if(navigator.canShare && navigator.canShare({files:[file]})){
+          await navigator.share({files:[file],title:fileName,text:bilingual('Cotización adjunta','Attached quote')});
+          flash('Cotización compartida.');
+        } else {
+          const url=URL.createObjectURL(blob);
+          const a=document.createElement('a'); a.href=url; a.download=fileName; document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(()=>URL.revokeObjectURL(url),4000);
+          flash('PDF descargado. Tu navegador no soporta compartir directo, adjúntalo manualmente.');
+        }
+      }catch(err){
+        if(err && err.name==='AbortError'){ /* usuario canceló el menú de compartir */ }
+        else flash('No se pudo generar el PDF. Intenta de nuevo.');
+      }finally{
+        btn.textContent=prevText; btn.disabled=false;
+      }
+    }
+    $('sharePdf').onclick=sharePdf;
     window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installPrompt=e});
     $('installApp').onclick=async()=>{
       if(installPrompt){ installPrompt.prompt(); await installPrompt.userChoice; installPrompt=null; return; }
