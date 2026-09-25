@@ -103,14 +103,6 @@
     </div>
   </header>
 
-  <form name="referidos" data-netlify="true" netlify-honeypot="bot-field" hidden>
-    <input type="text" name="referido_negocio">
-    <input type="text" name="referido_contacto">
-    <input type="text" name="referido_por">
-    <input type="text" name="fecha">
-    <input type="text" name="bot-field">
-  </form>
-
   <div class="launch-banner" role="status">
     <strong>LANZAMIENTO</strong>
     <span>Gratis e ilimitado hasta el 10 de octubre de 2026 · Sin tarjeta · Sin registro</span>
@@ -341,15 +333,21 @@
       const ref=localStorage.getItem('cp_ref');
       if(!ref||localStorage.getItem('cp_ref_sent')) return;
       try{
-        const body=new URLSearchParams({'form-name':'referidos',referido_negocio:$('business').value||'',referido_contacto:$('businessContact').value||'',referido_por:ref,fecha:new Date().toISOString()});
-        await fetch('/',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body.toString()});
-        localStorage.setItem('cp_ref_sent','1');
+        const r=await fetch('/api/referral',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({negocio:$('business').value||'',contacto:$('businessContact').value||'',referido_por:ref})});
+        if(r.ok){ localStorage.setItem('cp_ref_sent','1'); }
       }catch{}
     }
     $('referBtn').onclick=async()=>{
-      const link=`${location.origin}${location.pathname}?ref=${encodeURIComponent(slug($('business').value))}`;
-      try{ await navigator.clipboard.writeText(link); flash('Link de referido copiado. Compártelo — cuando lo usen, ganas 20 días extra.'); }
-      catch{ prompt('Copia este link para compartir:', link); }
+      const mySlug=slug($('business').value);
+      const link=`${location.origin}${location.pathname}?ref=${encodeURIComponent(mySlug)}`;
+      try{ await navigator.clipboard.writeText(link); }catch{ prompt('Copia este link para compartir:', link); }
+      try{
+        const r=await fetch(`/api/referral-status?ref=${encodeURIComponent(mySlug)}`);
+        const j=await r.json();
+        flash(`Link copiado. Llevas ${j.referrals||0} referido(s) = ${j.bonusDays||0} días extra ganados.`);
+      }catch{
+        flash('Link de referido copiado. Compártelo — cuando lo usen, ganas 20 días extra.');
+      }
     };
     $('clearSaved').onclick=()=>{if(confirm('¿Borrar todas las cotizaciones guardadas?'))saveAll([])};
     $('copyMessage').onclick=async()=>{const t=totals(); const es=`Hola ${$('customer').value||''}. Le envío la cotización ${$('quoteNumber').value} por ${money(t.total)}. El depósito para reservar es ${money(t.deposit)}. Quedo atento a cualquier pregunta.`; const en=`Hello ${$('customer').value||''}. I'm sending quote ${$('quoteNumber').value} for ${money(t.total)}. The deposit to schedule the work is ${money(t.deposit)}. Please let me know if you have any questions.`; const msg=$('language').value==='es'?es:$('language').value==='en'?en:`${es}\n\n${en}`; try{await navigator.clipboard.writeText(msg);flash('Mensaje bilingüe copiado.')}catch{prompt('Copia este mensaje:',msg)}};
