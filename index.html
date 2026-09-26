@@ -75,9 +75,10 @@
     .saved-card .actions { display:flex; gap:6px; }
     .saved-card button { padding:7px 9px; font-size:12px; }
     .status { min-height:18px; padding-top:8px; color:var(--brand); font-size:12px; font-weight:700; }
+    .status:not(:empty) { position:fixed; bottom:18px; left:18px; right:18px; z-index:15; padding:14px; background:#e0f5eb; border:1px solid #0b6e4f; border-radius:10px; }
     .install-help { display:none; position:fixed; inset:0; z-index:20; background:#06130ed9; padding:24px; align-items:center; justify-content:center; }
     .install-help.open { display:flex; }
-    .install-card { width:min(520px,100%); background:white; border-radius:16px; padding:24px; box-shadow:0 20px 60px #0005; }
+    .install-card { width:min(520px,100%); max-height:90dvh; overflow:auto; background:white; border-radius:16px; padding:24px; box-shadow:0 20px 60px #0005; }
     .install-card h3 { margin:0 0 10px; }
     .install-card p { color:var(--muted); line-height:1.55; }
     .install-card ol { padding-left:20px; line-height:1.65; }
@@ -85,7 +86,7 @@
     @media (max-width:900px) { main{grid-template-columns:1fr}.preview-wrap{position:static}.quote{min-height:auto} }
     @media (max-width:560px) { .grid2,.grid3,.parties{grid-template-columns:1fr}.line-item{grid-template-columns:1fr 70px 95px 40px}.topbar{align-items:flex-start;flex-direction:column} }
     @media print {
-      body{background:#fff}.topbar,.editor{display:none!important}main{display:block;margin:0;padding:0;max-width:none}.panel{border:0;box-shadow:none}.preview-wrap{position:static}.panel h2{display:none}.quote{padding:.45in;min-height:0}@page{size:letter;margin:.2in}
+      body{background:#fff}.topbar,.editor,.launch-banner,.install-help,body>div:last-child{display:none!important}main{display:block;margin:0;padding:0;max-width:none}.panel{border:0;box-shadow:none}.preview-wrap{position:static}.panel h2{display:none}.quote{padding:.45in;min-height:0}@page{size:letter;margin:.2in}
     }
   </style>
 </head>
@@ -165,6 +166,17 @@
     </div>
   </div>
 
+  <div class="install-help" id="referralHelp" role="dialog" aria-modal="true" aria-labelledby="referralTitle">
+    <div class="install-card">
+      <h3 id="referralTitle">Invita a otro negocio</h3>
+      <p id="referralResult" role="status"></p>
+      <textarea id="referralText" readonly aria-label="Invitación para compartir" style="min-height:150px"></textarea>
+      <p id="referralCredit" role="status"></p>
+      <p>Tu código pertenece a este navegador. Conserva el enlace si cambias de dispositivo. Los días extra requieren un referido válido; no equivalen a dinero.</p>
+      <button class="close" id="copyReferral">Copiar invitación</button>
+      <button class="light" id="closeReferral">Cerrar</button>
+    </div>
+  </div>
   <script>
     const $ = id => document.getElementById(id);
     const fields = ['business','businessContact','customer','customerContact','quoteNumber','quoteDate','language','validDays','discount','tax','deposit','notes','terms'];
@@ -177,7 +189,8 @@
     let notesTranslated = '';
     let notesLang = '';
 
-    function nextNumber(){ const d=new Date(); return `Q-${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}-${String(Math.floor(Math.random()*900)+100)}`; }
+    function nextNumber(){ return `Q-${Date.now().toString(36).toUpperCase()}-${crypto.randomUUID().slice(0,8)}`; }
+    function localDate(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
     function renderItems(){
       $('items').innerHTML=items.map((it,i)=>`<div class="line-item">
         <div class="desc-cell"><label>Descripción / Description</label><input data-i="${i}" data-k="description" value="${esc(it.description)}" placeholder="Ej. Limpieza de jardín / Yard cleanup"><div class="autotranslate" data-auto="${i}">${autoLine(it)}</div></div>
@@ -204,6 +217,7 @@
       try{
         const r=await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${from}|${to}`);
         const j=await r.json();
+        if(!r.ok||j.responseStatus!==200) return '';
         const out=j?.responseData?.translatedText||'';
         translateCache.set(key,out);
         return out;
@@ -216,14 +230,16 @@
     const translateTimers={};
     function scheduleTranslate(i){
       clearTimeout(translateTimers[i]);
+      items[i].descTranslated='';items[i].descLang='';
       const el=document.querySelector(`[data-auto="${i}"]`);
       if(!items[i].description.trim()){ items[i].descTranslated=''; items[i].descLang=''; if(el){el.textContent='';el.classList.remove('loading');} renderPreview(); return; }
       if(el){ el.textContent='Traduciendo... / Translating...'; el.classList.add('loading'); }
       translateTimers[i]=setTimeout(async()=>{
         const it=items[i]; if(!it) return;
-        const from=detectLang(it.description), to=from==='es'?'en':'es';
-        const translated=await translateText(it.description,from,to);
-        if(!items[i]||items[i].description!==it.description) return;
+        const source=it.description;
+        const from=detectLang(source), to=from==='es'?'en':'es';
+        const translated=await translateText(source,from,to);
+        if(items[i]!==it||it.description!==source) return;
         it.descTranslated=translated; it.descLang=from;
         const el2=document.querySelector(`[data-auto="${i}"]`);
         if(el2){ el2.textContent=autoLine(it).replace(/^(EN|ES): /,''); el2.textContent=(it.descLang==='es'?'EN: ':'ES: ')+translated; el2.classList.remove('loading'); }
@@ -234,6 +250,7 @@
     let termsTimer=null;
     function scheduleTranslateTerms(){
       clearTimeout(termsTimer);
+      termsTranslated='';termsLang='';
       const el=$('termsAuto');
       const val=$('terms').value;
       if(!val.trim()){ termsTranslated=''; termsLang=''; if(el)el.textContent=''; renderPreview(); return; }
@@ -261,6 +278,7 @@
     let notesTimer=null;
     function scheduleTranslateNotes(){
       clearTimeout(notesTimer);
+      notesTranslated='';notesLang='';
       const el=$('notesAuto');
       const val=$('notes').value;
       if(!val.trim()){ notesTranslated=''; notesLang=''; if(el)el.textContent=''; renderPreview(); return; }
@@ -286,7 +304,17 @@
       return `${esc(esT)}\n${esc(enT)}`;
     }
 
-    function totals(){ const subtotal=items.reduce((s,x)=>s+(+x.qty||0)*(+x.price||0),0); const discount=+$('discount').value||0; const taxable=Math.max(0,subtotal-discount); const tax=taxable*((+$('tax').value||0)/100); const total=taxable+tax; const deposit=total*((+$('deposit').value||0)/100); return {subtotal,discount,tax,total,deposit}; }
+    function numberInRange(value,max=Number.MAX_SAFE_INTEGER){const n=Number(value);return Number.isFinite(n)?Math.min(max,Math.max(0,n)):0;}
+    function totals(){
+      const round=n=>Math.round((n+Number.EPSILON)*100)/100;
+      items.forEach(x=>{x.qty=numberInRange(x.qty);x.price=numberInRange(x.price);});
+      const subtotal=round(items.reduce((s,x)=>s+round(x.qty*x.price),0));
+      const discount=numberInRange($('discount').value,subtotal);
+      const taxRate=numberInRange($('tax').value,100),depositRate=numberInRange($('deposit').value,100);
+      $('discount').value=discount;$('tax').value=taxRate;$('deposit').value=depositRate;
+      const tax=round((subtotal-discount)*taxRate/100),total=round(subtotal-discount+tax),deposit=round(total*depositRate/100);
+      return {subtotal,discount,tax,total,deposit};
+    }
     function bilingual(es,en){ const l=$('language').value; return l==='es'?es:l==='en'?en:`${es} / ${en}`; }
     function renderPreview(){
       const t=totals(), date=$('quoteDate').value?new Date($('quoteDate').value+'T12:00:00').toLocaleDateString():'';
@@ -307,7 +335,7 @@
         <div class="parties"><div><div class="party-title">${bilingual('De','From')}</div><div class="party">${esc($('business').value)}\n${esc($('businessContact').value)}</div></div><div><div class="party-title">${bilingual('Para','To')}</div><div class="party">${esc($('customer').value)||'<span class="empty">Nombre del cliente</span>'}\n${esc($('customerContact').value)}</div></div></div>
         <table><thead><tr><th>${bilingual('Descripción','Description')}</th><th>${bilingual('Cant.','Qty.')}</th><th>${bilingual('Precio','Rate')}</th><th>${bilingual('Importe','Amount')}</th></tr></thead><tbody>${rows||`<tr><td class="empty">Agrega un servicio</td><td>—</td><td>—</td><td>—</td></tr>`}</tbody></table>
         <div class="preview-totals"><div class="total-row"><span>${bilingual('Subtotal','Subtotal')}</span><strong>${money(t.subtotal)}</strong></div>${t.discount?`<div class="total-row"><span>${bilingual('Descuento','Discount')}</span><strong>−${money(t.discount)}</strong></div>`:''}${t.tax?`<div class="total-row"><span>${bilingual('Impuesto','Tax')}</span><strong>${money(t.tax)}</strong></div>`:''}<div class="total-row grand"><span>${bilingual('Total','Total')}</span><span>${money(t.total)}</span></div><div class="total-row"><span>${bilingual('Depósito','Deposit')} (${$('deposit').value||0}%)</span><strong>${money(t.deposit)}</strong></div><div class="total-row"><span>${bilingual('Saldo pendiente','Balance due')}</span><strong>${money(t.total-t.deposit)}</strong></div></div>
-        ${notes?`<div class="notes">${esc(notes)}</div>`:''}<div class="terms">${termsBlock()}</div>`;
+        ${notes?`<div class="notes">${notes}</div>`:''}<div class="terms">${termsBlock()}</div>`;
     }
 
     function data(){ return {id:$('quoteNumber').value,created:Date.now(),fields:Object.fromEntries(fields.map(f=>[f,$(f).value])),items,termsTranslated,termsLang,notesTranslated,notesLang}; }
@@ -315,7 +343,8 @@
     function saved(){ try{return JSON.parse(localStorage.getItem('cotizapro_quotes')||'[]')}catch{return[]} }
     function saveAll(list){ localStorage.setItem('cotizapro_quotes',JSON.stringify(list)); renderSaved(); }
     function renderSaved(){ const list=saved(); $('savedList').innerHTML=list.length?list.map((q,i)=>`<div class="saved-card"><div><strong>${esc(q.fields.customer||'Sin cliente')}</strong><span>${esc(q.id)} · ${new Date(q.created).toLocaleDateString()}</span></div><div class="actions"><button class="light" data-load="${i}">Abrir</button><button class="danger" data-delete="${i}">×</button></div></div>`).join(''):'<span class="empty">Todavía no hay cotizaciones guardadas.</span>'; $('savedList').querySelectorAll('[data-load]').forEach(b=>b.onclick=()=>load(list[+b.dataset.load])); $('savedList').querySelectorAll('[data-delete]').forEach(b=>b.onclick=()=>{list.splice(+b.dataset.delete,1);saveAll(list)}); }
-    function flash(msg){$('status').textContent=msg;setTimeout(()=>$('status').textContent='',2500)}
+    let flashTimer;
+    function flash(msg){clearTimeout(flashTimer);$('status').textContent=msg;flashTimer=setTimeout(()=>$('status').textContent='',8000)}
     function reset(){ fields.forEach(f=>$(f).value=''); $('business').value='Mi Negocio LLC'; $('quoteNumber').value=nextNumber(); $('quoteDate').value=new Date().toISOString().slice(0,10); $('language').value='both'; $('validDays').value='14'; $('discount').value='0'; $('tax').value='0'; $('deposit').value='25'; $('terms').value='El precio puede cambiar si el alcance del trabajo cambia. El trabajo comienza después de aprobar la cotización y recibir el depósito.'; termsTranslated=''; termsLang=''; $('termsAuto').textContent=''; notesTranslated=''; notesLang=''; $('notesAuto').textContent=''; items=[{description:'',qty:1,price:0}]; renderItems();renderPreview(); scheduleTranslateTerms(); }
 
     fields.forEach(f=>$(f).addEventListener('input',renderPreview));
@@ -327,28 +356,37 @@
 
     function slug(s){ return (s||'Mi-Negocio').trim().replace(/\s+/g,'-').slice(0,40); }
     const refParams=new URLSearchParams(location.search);
+    let referralId=localStorage.getItem('cp_referral_id');
+    if(!referralId){referralId=crypto.randomUUID();localStorage.setItem('cp_referral_id',referralId);}
     const incomingRef=refParams.get('ref');
-    if(incomingRef) localStorage.setItem('cp_ref',incomingRef);
+    if(incomingRef&&incomingRef!==referralId&&!localStorage.getItem('cp_ref')) localStorage.setItem('cp_ref',incomingRef);
     async function submitReferralIfNeeded(){
       const ref=localStorage.getItem('cp_ref');
-      if(!ref||localStorage.getItem('cp_ref_sent')) return;
+      if(!ref||ref===referralId||localStorage.getItem('cp_ref_sent')) return;
+      if(!$('businessContact').value.trim()||!$('customer').value.trim()||!items.some(x=>x.description.trim()&&x.price>0)) return;
       try{
-        const r=await fetch('/api/referral',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({negocio:$('business').value||'',contacto:$('businessContact').value||'',referido_por:ref})});
+        const r=await fetch('/api/referral',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({negocio:$('business').value||'',contacto:$('businessContact').value||'',referido_por:ref,visitor_id:referralId})});
         if(r.ok){ localStorage.setItem('cp_ref_sent','1'); }
       }catch{}
     }
     $('referBtn').onclick=async()=>{
-      const mySlug=slug($('business').value);
-      const link=`${location.origin}${location.pathname}?ref=${encodeURIComponent(mySlug)}`;
-      try{ await navigator.clipboard.writeText(link); }catch{ prompt('Copia este link para compartir:', link); }
-      try{
-        const r=await fetch(`/api/referral-status?ref=${encodeURIComponent(mySlug)}`);
-        const j=await r.json();
-        flash(`Link copiado. Llevas ${j.referrals||0} referido(s) = ${j.bonusDays||0} días extra ganados.`);
-      }catch{
-        flash('Link de referido copiado. Compártelo — cuando lo usen, ganas 20 días extra.');
-      }
+      const link=new URL('/',location.origin);link.searchParams.set('ref',referralId);
+      const message=`Te recomiendo CotizaPro para crear cotizaciones en español e inglés y guardarlas en PDF. Pruébalo aquí: ${link.href}`;
+      $('referralText').value=message;
+      $('referralResult').textContent='Este mensaje solo incluye la invitación; no incluye tu cotización ni los datos de tu cliente.';
+      $('referralHelp').classList.add('open');
+      try{await navigator.clipboard.writeText(message);$('referralResult').textContent='Invitación copiada. Puedes revisar el texto abajo antes de pegarlo en el chat.';}
+      catch{$('referralResult').textContent='No se pudo copiar automáticamente. Pulsa Copiar invitación o selecciona el texto manualmente.';}
+      $('referralCredit').textContent='Consultando tus referidos…';
+      try{const r=await fetch(`/api/referral-status?ref=${encodeURIComponent(referralId)}`,{cache:'no-store'});if(!r.ok)throw Error('status');const j=await r.json();$('referralCredit').textContent=`Este código: ${Number(j.referrals)||0} referido(s), ${Number(j.bonusDays)||0} días extra registrados.`;}
+      catch{$('referralCredit').textContent='No se pudo consultar el saldo de referidos. Puedes compartir la invitación igualmente.';}
     };
+    $('copyReferral').onclick=async()=>{
+      try{await navigator.clipboard.writeText($('referralText').value);$('referralResult').textContent='Invitación copiada correctamente. No contiene la cotización.';}
+      catch{$('referralText').focus();$('referralText').select();$('referralResult').textContent='Copia manualmente el texto seleccionado. El portapapeles no se actualizó.';}
+    };
+    $('closeReferral').onclick=()=>{$('referralHelp').classList.remove('open');$('referBtn').focus();};
+    document.addEventListener('keydown',e=>{if(e.key==='Escape')$('referralHelp').classList.remove('open');});
     $('clearSaved').onclick=()=>{if(confirm('¿Borrar todas las cotizaciones guardadas?'))saveAll([])};
     $('copyMessage').onclick=async()=>{const t=totals(); const es=`Hola ${$('customer').value||''}. Le envío la cotización ${$('quoteNumber').value} por ${money(t.total)}. El depósito para reservar es ${money(t.deposit)}. Quedo atento a cualquier pregunta.`; const en=`Hello ${$('customer').value||''}. I'm sending quote ${$('quoteNumber').value} for ${money(t.total)}. The deposit to schedule the work is ${money(t.deposit)}. Please let me know if you have any questions.`; const msg=$('language').value==='es'?es:$('language').value==='en'?en:`${es}\n\n${en}`; try{await navigator.clipboard.writeText(msg);flash('Mensaje bilingüe copiado.')}catch{prompt('Copia este mensaje:',msg)}};
     async function sharePdf(){
@@ -399,6 +437,8 @@
     $('closeInstall').onclick=()=>$('installHelp').classList.remove('open');
     $('installHelp').onclick=e=>{if(e.target===$('installHelp'))$('installHelp').classList.remove('open')};
     if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));}
+    const resetOriginal=reset;
+    reset=function(){Object.values(translateTimers).forEach(clearTimeout);clearTimeout(notesTimer);clearTimeout(termsTimer);resetOriginal();$('quoteDate').value=localDate();renderPreview();};
     reset(); renderSaved();
   </script>
   <div style="text-align:center;padding:16px 0;">

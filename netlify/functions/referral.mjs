@@ -6,15 +6,15 @@ export default async (req) => {
   }
   try {
     const body = await req.json();
-    const negocio = (body.negocio || '').trim();
-    const contactoRaw = (body.contacto || '').trim().toLowerCase();
-    const referidoPor = (body.referido_por || '').trim();
+    const negocio = typeof body.negocio==='string'?body.negocio.trim().slice(0,200):'';
+    const contactoRaw = typeof body.contacto==='string'?body.contacto.trim().toLowerCase().slice(0,200):'';
+    const referidoPor = typeof body.referido_por==='string'?body.referido_por.trim().slice(0,100):'';
     const identificador = contactoRaw || negocio.trim().toLowerCase();
 
-    if (!referidoPor || !identificador) {
+    if (!referidoPor || !contactoRaw || !negocio) {
       return new Response(JSON.stringify({ error: 'missing fields' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
     }
-    if (identificador === referidoPor.toLowerCase()) {
+    if (body.visitor_id === referidoPor || identificador === referidoPor.toLowerCase() || negocio.toLowerCase().replace(/\s+/g,'-') === referidoPor.toLowerCase()) {
       // evita que alguien se auto-refiera con el mismo nombre de negocio
       return new Response(JSON.stringify({ ok: true, duplicate: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
