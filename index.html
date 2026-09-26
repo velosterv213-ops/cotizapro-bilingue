@@ -99,8 +99,7 @@
       <button class="secondary" id="copyMessage">Copiar mensaje</button>
       <button class="secondary" id="referBtn">Recomienda y gana</button>
       <button class="secondary" id="installApp">Instalar en teléfono</button>
-      <button class="primary" id="sharePdf">Compartir PDF</button>
-      <button class="secondary" onclick="window.print()">Imprimir</button>
+      <button class="primary" id="sharePdf">Imprimir / Guardar PDF</button>
     </div>
   </header>
 
@@ -389,47 +388,7 @@
     document.addEventListener('keydown',e=>{if(e.key==='Escape')$('referralHelp').classList.remove('open');});
     $('clearSaved').onclick=()=>{if(confirm('¿Borrar todas las cotizaciones guardadas?'))saveAll([])};
     $('copyMessage').onclick=async()=>{const t=totals(); const es=`Hola ${$('customer').value||''}. Le envío la cotización ${$('quoteNumber').value} por ${money(t.total)}. El depósito para reservar es ${money(t.deposit)}. Quedo atento a cualquier pregunta.`; const en=`Hello ${$('customer').value||''}. I'm sending quote ${$('quoteNumber').value} for ${money(t.total)}. The deposit to schedule the work is ${money(t.deposit)}. Please let me know if you have any questions.`; const msg=$('language').value==='es'?es:$('language').value==='en'?en:`${es}\n\n${en}`; try{await navigator.clipboard.writeText(msg);flash('Mensaje bilingüe copiado.')}catch{prompt('Copia este mensaje:',msg)}};
-    async function sharePdf(){
-      const btn=$('sharePdf'); const prevText=btn.textContent;
-      btn.textContent='Generando...'; btn.disabled=true;
-      try{
-        if(typeof html2canvas==='undefined'||!window.jspdf){ flash('Cargando herramientas de PDF, intenta de nuevo en unos segundos.'); return; }
-        const { jsPDF } = window.jspdf;
-        const node=$('quotePreview');
-                const prevStyle={minHeight:node.style.minHeight,width:node.style.width,maxWidth:node.style.maxWidth,padding:node.style.padding};
-                        node.style.minHeight='0'; node.style.width='7.6in'; node.style.maxWidth='7.6in'; node.style.padding='.4in';
-                                await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-                                        const canvas=await html2canvas(node,{scale:2,backgroundColor:'#ffffff'});
-                                                Object.assign(node.style,prevStyle);
-                                                        const imgData=canvas.toDataURL('image/png');
-                                                                const pdf=new jsPDF({unit:'pt',format:'letter'});
-                                                                        const margin=28;
-                                                                                const pageW=pdf.internal.pageSize.getWidth(), pageH=pdf.internal.pageSize.getHeight();
-                                                                                        const imgW=pageW-margin*2, imgH=canvas.height*imgW/canvas.width;
-                                                                                                const pageContentH=pageH-margin*2;
-                                                                                                        let heightLeft=imgH, position=margin;
-                                                                                                                pdf.addImage(imgData,'PNG',margin,position,imgW,imgH);
-                                                                                                                        heightLeft-=pageContentH;
-                                                                                                                                while(heightLeft>0){ position=margin-(imgH-heightLeft); pdf.addPage(); pdf.addImage(imgData,'PNG',margin,position,imgW,imgH); heightLeft-=pageContentH; }
-        const fileName=`Cotizacion-${($('quoteNumber').value||'CotizaPro').replace(/[^\w-]+/g,'')}.pdf`;
-        const blob=pdf.output('blob');
-        const file=new File([blob],fileName,{type:'application/pdf'});
-        if(navigator.canShare && navigator.canShare({files:[file]})){
-          await navigator.share({files:[file],title:fileName,text:bilingual('Cotización adjunta','Attached quote')});
-          flash('Cotización compartida.');
-        } else {
-          const url=URL.createObjectURL(blob);
-          const a=document.createElement('a'); a.href=url; a.download=fileName; document.body.appendChild(a); a.click(); a.remove();
-          setTimeout(()=>URL.revokeObjectURL(url),4000);
-          flash('PDF descargado. Tu navegador no soporta compartir directo, adjúntalo manualmente.');
-        }
-      }catch(err){
-        if(err && err.name==='AbortError'){ /* usuario canceló el menú de compartir */ }
-        else flash('No se pudo generar el PDF. Intenta de nuevo.');
-      }finally{
-        btn.textContent=prevText; btn.disabled=false;
-      }
-    }
+    function sharePdf(){ window.print(); }
     $('sharePdf').onclick=sharePdf;
     window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installPrompt=e});
     $('installApp').onclick=async()=>{
