@@ -396,7 +396,9 @@
         if(typeof html2canvas==='undefined'||!window.jspdf){ flash('Cargando herramientas de PDF, intenta de nuevo en unos segundos.'); return; }
         const { jsPDF } = window.jspdf;
         const node=$('quotePreview');
+        const prevMinH=node.style.minHeight; node.style.minHeight='0';
         const canvas=await html2canvas(node,{scale:2,backgroundColor:'#ffffff'});
+        node.style.minHeight=prevMinH;
         const imgData=canvas.toDataURL('image/png');
         const pdf=new jsPDF({unit:'pt',format:'letter'});
         const pageW=pdf.internal.pageSize.getWidth(), pageH=pdf.internal.pageSize.getHeight();
