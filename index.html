@@ -396,17 +396,21 @@
         if(typeof html2canvas==='undefined'||!window.jspdf){ flash('Cargando herramientas de PDF, intenta de nuevo en unos segundos.'); return; }
         const { jsPDF } = window.jspdf;
         const node=$('quotePreview');
-        const prevMinH=node.style.minHeight; node.style.minHeight='0';
-        const canvas=await html2canvas(node,{scale:2,backgroundColor:'#ffffff'});
-        node.style.minHeight=prevMinH;
-        const imgData=canvas.toDataURL('image/png');
-        const pdf=new jsPDF({unit:'pt',format:'letter'});
-        const pageW=pdf.internal.pageSize.getWidth(), pageH=pdf.internal.pageSize.getHeight();
-        const imgW=pageW, imgH=canvas.height*imgW/canvas.width;
-        let heightLeft=imgH, position=0;
-        pdf.addImage(imgData,'PNG',0,position,imgW,imgH);
-        heightLeft-=pageH;
-        while(heightLeft>0){ position=heightLeft-imgH; pdf.addPage(); pdf.addImage(imgData,'PNG',0,position,imgW,imgH); heightLeft-=pageH; }
+                const prevStyle={minHeight:node.style.minHeight,width:node.style.width,maxWidth:node.style.maxWidth,padding:node.style.padding};
+                        node.style.minHeight='0'; node.style.width='7.6in'; node.style.maxWidth='7.6in'; node.style.padding='.4in';
+                                await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+                                        const canvas=await html2canvas(node,{scale:2,backgroundColor:'#ffffff'});
+                                                Object.assign(node.style,prevStyle);
+                                                        const imgData=canvas.toDataURL('image/png');
+                                                                const pdf=new jsPDF({unit:'pt',format:'letter'});
+                                                                        const margin=28;
+                                                                                const pageW=pdf.internal.pageSize.getWidth(), pageH=pdf.internal.pageSize.getHeight();
+                                                                                        const imgW=pageW-margin*2, imgH=canvas.height*imgW/canvas.width;
+                                                                                                const pageContentH=pageH-margin*2;
+                                                                                                        let heightLeft=imgH, position=margin;
+                                                                                                                pdf.addImage(imgData,'PNG',margin,position,imgW,imgH);
+                                                                                                                        heightLeft-=pageContentH;
+                                                                                                                                while(heightLeft>0){ position=margin-(imgH-heightLeft); pdf.addPage(); pdf.addImage(imgData,'PNG',margin,position,imgW,imgH); heightLeft-=pageContentH; }
         const fileName=`Cotizacion-${($('quoteNumber').value||'CotizaPro').replace(/[^\w-]+/g,'')}.pdf`;
         const blob=pdf.output('blob');
         const file=new File([blob],fileName,{type:'application/pdf'});
